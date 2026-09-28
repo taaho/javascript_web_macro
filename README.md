@@ -2,6 +2,22 @@
 
 Node.js와 Playwright로 Maxerve 예약 페이지의 일반 주차대행 선택 가능 여부를 반복 확인합니다.
 
+## 동작 흐름
+
+```text
+JavaScript 코드
+  ↓ Node.js가 실행
+Playwright 라이브러리
+  ↓ Chromium 실행 및 제어 연결
+Chromium 브라우저
+  ↓ 새 탭 생성
+Playwright Page 객체
+  ↓ goto, locator, press 등의 명령 실행
+예약 페이지
+```
+
+`maxerve-monitor.mjs`는 JavaScript 파일입니다. Node.js가 이 파일을 실행하면 Playwright를 불러오고, `chromium.launch()`로 Playwright 전용 Chromium 브라우저를 실행합니다. `browser.newPage()`가 만든 탭은 Playwright의 `Page` 객체로 반환되며, `page.goto()`로 페이지를 열고 `page.locator()`와 `press()`로 화면 요소를 조작합니다.
+
 ## Windows 실행
 
 Node.js 20 이상을 설치한 후 저장소 폴더에서 PowerShell로 실행합니다.
