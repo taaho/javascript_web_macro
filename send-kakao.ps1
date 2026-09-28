@@ -21,6 +21,30 @@ public static class KakaoWindow {
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int cmd);
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr hWnd, IntPtr processId);
+    [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
+    [DllImport("user32.dll")] static extern bool AttachThreadInput(uint from, uint to, bool attach);
+    [DllImport("user32.dll")] static extern bool BringWindowToTop(IntPtr hWnd);
+    public static void Activate(IntPtr window) {
+        ShowWindow(window, 9);
+        SetForegroundWindow(window);
+        if (GetForegroundWindow() == window) return;
+        uint current = GetCurrentThreadId();
+        uint foreground = GetWindowThreadProcessId(GetForegroundWindow(), IntPtr.Zero);
+        uint target = GetWindowThreadProcessId(window, IntPtr.Zero);
+        bool foregroundAttached = false, targetAttached = false;
+        try {
+            if (foreground != 0 && foreground != current)
+                foregroundAttached = AttachThreadInput(current, foreground, true);
+            if (target != 0 && target != current && target != foreground)
+                targetAttached = AttachThreadInput(current, target, true);
+            BringWindowToTop(window);
+            SetForegroundWindow(window);
+        } finally {
+            if (targetAttached) AttachThreadInput(current, target, false);
+            if (foregroundAttached) AttachThreadInput(current, foreground, false);
+        }
+    }
 }
 '@
 
@@ -33,6 +57,12 @@ $matches = @($windows | Where-Object {
 })
 if ($matches.Count -ne 1) { throw 'Expected exactly one KakaoTalk window with the specified title.' }
 $window = $matches[0]
+$handle = [IntPtr]$window.Current.NativeWindowHandle
+[KakaoWindow]::Activate($handle)
+Start-Sleep -Milliseconds 500
+if ([KakaoWindow]::GetForegroundWindow() -ne $handle) {
+    throw 'Could not bring the chat to foreground. No message sent.'
+}
 $editCondition = [System.Windows.Automation.PropertyCondition]::new(
     [System.Windows.Automation.AutomationElement]::ClassNameProperty,
     'RICHEDIT50W')
@@ -41,10 +71,6 @@ $edits = @($window.FindAll([System.Windows.Automation.TreeScope]::Descendants, $
 if ($edits.Count -ne 1) { throw 'Cannot uniquely identify the message input. No message sent.' }
 $edit = $edits[0]
 $value = $edit.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
-$handle = [IntPtr]$window.Current.NativeWindowHandle
-[void][KakaoWindow]::ShowWindow($handle, 9)
-[void][KakaoWindow]::SetForegroundWindow($handle)
-Start-Sleep -Milliseconds 300
 $edit.SetFocus()
 Start-Sleep -Milliseconds 300
 if ([KakaoWindow]::GetForegroundWindow() -ne $handle) { throw 'Chat is not foreground. No message sent.' }

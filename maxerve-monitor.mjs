@@ -2,6 +2,23 @@ import { chromium } from "playwright";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
+import { createInterface } from "node:readline/promises";
+
+const input = createInterface({ input: process.stdin, output: process.stdout });
+let targetDay;
+try {
+  while (!targetDay) {
+    const answer = (await input.question("2026년 10월 이용 날짜를 입력하세요 (1~31): ")).trim();
+    if (/^\d{1,2}$/.test(answer) && Number(answer) >= 1 && Number(answer) <= 31) {
+      targetDay = String(Number(answer));
+    } else {
+      console.log("1부터 31까지의 날짜 숫자만 입력하세요.");
+    }
+  }
+} finally {
+  input.close();
+}
+const targetDate = `2026-10-${targetDay.padStart(2, "0")}`;
 
 const runFile = promisify(execFile);
 async function notifyKakao() {
@@ -22,10 +39,17 @@ async function selectDay(page, day) {
   const date = page.locator("#use_date");
   await date.press("Control+Home");
   await sleepHuman(page);
-  await date.press("PageDown");
-  await sleepHuman(page);
+  const today = new Date();
+  const monthOffset = (2026 - today.getFullYear()) * 12 + 9 - today.getMonth();
+  for (let i = 0; i < Math.abs(monthOffset); i++) {
+    await date.press(monthOffset > 0 ? "PageDown" : "PageUp");
+    await sleepHuman(page);
+  }
   await page.getByRole("link", { name: day, exact: true }).press("Enter");
   await sleepHuman(page);
+  if (await date.inputValue() !== targetDate) {
+    throw new Error(`목적 날짜 ${targetDate} 선택에 실패했습니다.`);
+  }
 }
 
 const browser = await chromium.launch({ headless: false });
@@ -34,7 +58,7 @@ await page.goto(targetUrl, { waitUntil: "domcontentloaded" });
 
 try {
   for (;;) {
-    await selectDay(page, "2");
+    await selectDay(page, targetDay);
     await page.locator("#use_hour").selectOption("19");
     await sleepHuman(page);
 
@@ -55,7 +79,7 @@ try {
       !(await unavailable.isVisible());
 
     if (isAvailable) {
-      console.log("예약 가능: 2026-10-02 19시 일반 주차대행이 선택되었습니다.");
+      console.log(`예약 가능: ${targetDate} 19시 일반 주차대행이 선택되었습니다.`);
       try {
         await notifyKakao();
         console.log("카카오톡 전송 입력 완료: 박유진 / 바로 예약해");
