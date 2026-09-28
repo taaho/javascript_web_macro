@@ -1,4 +1,5 @@
 node_modules/
+reservation.local.json
 dist/
 build/
 playwright-report/

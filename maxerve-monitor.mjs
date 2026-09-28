@@ -3,6 +3,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline/promises";
+import { prefillReservation } from "./prefill-reservation.mjs";
 
 const input = createInterface({ input: process.stdin, output: process.stdout });
 let targetDay;
@@ -35,20 +36,22 @@ const unavailableText =
 const sleepHuman = (page) =>
   page.waitForTimeout(2000 + Math.floor(Math.random() * 1001));
 
-async function selectDay(page, day) {
-  const date = page.locator("#use_date");
+async function selectDay(page, day, selector = "#use_date", expected = targetDate) {
+  const date = page.locator(selector);
   await date.press("Control+Home");
   await sleepHuman(page);
-  const today = new Date();
-  const monthOffset = (2026 - today.getFullYear()) * 12 + 9 - today.getMonth();
+  const title = await page.locator(".ui-datepicker-title").innerText();
+  const displayed = title.match(/(\d{4})년\s*(\d{1,2})월/);
+  if (!displayed) throw new Error("달력의 연도와 월을 확인할 수 없습니다.");
+  const monthOffset = (2026 - Number(displayed[1])) * 12 + 10 - Number(displayed[2]);
   for (let i = 0; i < Math.abs(monthOffset); i++) {
     await date.press(monthOffset > 0 ? "PageDown" : "PageUp");
     await sleepHuman(page);
   }
   await page.getByRole("link", { name: day, exact: true }).press("Enter");
   await sleepHuman(page);
-  if (await date.inputValue() !== targetDate) {
-    throw new Error(`목적 날짜 ${targetDate} 선택에 실패했습니다.`);
+  if (await date.inputValue() !== expected) {
+    throw new Error(`목적 날짜 ${expected} 선택에 실패했습니다.`);
   }
 }
 
@@ -57,9 +60,14 @@ const page = await browser.newPage();
 await page.goto(targetUrl, { waitUntil: "domcontentloaded" });
 
 try {
+  await selectDay(page, targetDay);
+  await prefillReservation(page, selectDay, sleepHuman);
   for (;;) {
     await selectDay(page, targetDay);
     await page.locator("#use_hour").selectOption("19");
+    await sleepHuman(page);
+
+    await page.locator("#use_minute").selectOption("00");
     await sleepHuman(page);
 
     const normalValet = page.getByRole("radio", {
@@ -80,6 +88,14 @@ try {
 
     if (isAvailable) {
       console.log(`예약 가능: ${targetDate} 19시 일반 주차대행이 선택되었습니다.`);
+      try {
+        // Request phone verification once, before the KakaoTalk notification.
+        await page.locator("#in_confirm").click({ timeout: 10000 });
+        await sleepHuman(page);
+        console.log("연락처 인증요청 버튼을 클릭했습니다. 수신한 인증번호는 직접 입력하세요.");
+      } catch (error) {
+        console.error("인증요청 클릭 실패. 자동 재시도 없이 카카오톡 알림을 진행합니다.", error.message);
+      }
       try {
         await notifyKakao();
         console.log("카카오톡 전송 입력 완료: 박유진 / 바로 예약해");
