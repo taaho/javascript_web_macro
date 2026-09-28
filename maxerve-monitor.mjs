@@ -1,4 +1,15 @@
 import { chromium } from "playwright";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
+
+const runFile = promisify(execFile);
+async function notifyKakao() {
+  await runFile("powershell.exe", [
+    "-NoProfile", "-STA", "-ExecutionPolicy", "Bypass", "-File", fileURLToPath(new URL("./send-kakao.ps1", import.meta.url)),
+    "-ChatTitle", "박유진", "-Message", "바로 예약해",
+  ], { windowsHide: true, timeout: 15000 });
+}
 
 const targetUrl = "https://maxerve-mparking.com/reserve/";
 const unavailableText =
@@ -45,6 +56,12 @@ try {
 
     if (isAvailable) {
       console.log("예약 가능: 2026-10-02 19시 일반 주차대행이 선택되었습니다.");
+      try {
+        await notifyKakao();
+        console.log("카카오톡 전송 입력 완료: 박유진 / 바로 예약해");
+      } catch (error) {
+        console.error("카카오톡 알림 실패. 중복 전송 방지를 위해 재시도하지 않습니다.", error.message);
+      }
       console.log("반복 확인을 멈췄습니다. 열린 브라우저를 직접 사용하세요.");
       console.log("브라우저 사용이 끝날 때까지 이 실행 창을 닫지 마세요.");
       // Keep Playwright connected without further interaction until the user closes the browser.
